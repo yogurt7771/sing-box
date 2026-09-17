@@ -79,23 +79,27 @@ func (c *Client) DialContext(ctx context.Context) (net.Conn, error) {
 		return nil, err
 	}
 	if c.maxEarlyData > 0 {
-		return &EarlyWebsocketConn{Client: c, rawConn: conn, create: make(chan struct{})}, nil
+		return &EarlyWebsocketConn{Client: c, ctx: ctx, rawConn: conn, create: make(chan struct{})}, nil
 	}
-	websocketConn, err := c.upgrade(conn, &c.requestURL, c.headers)
+	websocketConn, err := c.upgrade(ctx, conn, &c.requestURL, c.headers)
 	if err != nil {
 		return nil, err
 	}
 	return websocketConn, nil
 }
 
-func (c *Client) upgrade(conn net.Conn, requestURL *url.URL, headers http.Header) (*WebsocketConn, error) {
+func (c *Client) upgrade(ctx context.Context, conn net.Conn, requestURL *url.URL, headers http.Header) (*WebsocketConn, error) {
 	var deadlineConn net.Conn
 	if deadline.NeedAdditionalReadDeadline(conn) {
 		deadlineConn = deadline.NewConn(conn)
 	} else {
 		deadlineConn = conn
 	}
-	deadlineConn.SetDeadline(time.Now().Add(C.TCPTimeout))
+	handshakeDeadline := time.Now().Add(C.TCPTimeout)
+	if contextDeadline, loaded := ctx.Deadline(); loaded && contextDeadline.Before(handshakeDeadline) {
+		handshakeDeadline = contextDeadline
+	}
+	deadlineConn.SetDeadline(handshakeDeadline)
 	var protocols []string
 	protocolHeader := headers.Get("Sec-WebSocket-Protocol")
 	if protocolHeader != "" {

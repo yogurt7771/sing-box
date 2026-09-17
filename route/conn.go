@@ -279,6 +279,11 @@ func (m *ConnectionManager) connectionCopy(ctx context.Context, source net.Conn,
 	} else {
 		destinationWriter, _ := N.UnwrapCountWriter(destination, nil)
 		duplexDst, isDuplex := N.UnwrapWriter(destinationWriter).(N.WriteCloser)
+		if !isDuplex {
+			if halfCloseSource, loaded := common.Cast[upstreamHalfCloseSource](source); loaded && halfCloseSource.AllowUpstreamHalfClose() {
+				duplexDst, isDuplex = common.Cast[N.WriteCloser](destination)
+			}
+		}
 		if isDuplex {
 			err = duplexDst.CloseWrite()
 			if err != nil {
@@ -311,6 +316,10 @@ func (m *ConnectionManager) connectionCopy(ctx context.Context, source net.Conn,
 			m.logger.TraceContext(ctx, "connection download closed")
 		}
 	}
+}
+
+type upstreamHalfCloseSource interface {
+	AllowUpstreamHalfClose() bool
 }
 
 func (m *ConnectionManager) kickWriteHandshake(ctx context.Context, source net.Conn, destination net.Conn, serverFirst bool, direction bool, done *atomic.Bool, onClose N.CloseHandlerFunc) bool {

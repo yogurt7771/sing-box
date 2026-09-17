@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"runtime"
 	"testing"
 	"time"
 
@@ -26,7 +27,17 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	goleak.VerifyTestMain(m)
+	options := []goleak.Option{
+		// sing-anytls checks cancellation only after its idle-maintenance sleep.
+		// The goroutine exits on the next tick, but can outlive a short test.
+		goleak.IgnoreAnyFunction("github.com/anytls/sing-anytls/session.NewClient.func1"),
+	}
+	if runtime.GOOS == "windows" {
+		// go-winio owns one process-wide IOCP worker. It is intentionally kept
+		// alive until process exit and is not a goroutine leaked by a test.
+		options = append(options, goleak.IgnoreAnyFunction("github.com/Microsoft/go-winio.ioCompletionProcessor"))
+	}
+	goleak.VerifyTestMain(m, options...)
 }
 
 var globalCtx context.Context
